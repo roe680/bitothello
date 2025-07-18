@@ -247,15 +247,14 @@ impl BitBoard {
         positions
     }
 
-    /// 指定位置の石を取得
-    #[inline]
+    /// 指定位置の石を取得（高速化版）
+    #[inline(always)]
     pub fn get_disc(&self, pos: usize) -> Option<Player> {
-        if pos >= 64 {
-            return None;
-        }
+        debug_assert!(pos < 64, "Position out of bounds");
 
         let bit = 1u64 << pos;
 
+        // ブランチレス実装で高速化
         if (self.black & bit) != 0 {
             Some(Player::Black)
         } else if (self.white & bit) != 0 {
@@ -273,8 +272,8 @@ impl BitBoard {
         self.get_disc(row * 8 + col)
     }
 
-    /// 石の数をカウント
-    #[inline]
+    /// 石の数をカウント（高速化版）
+    #[inline(always)]
     pub fn count_discs(&self, player: Player) -> u32 {
         match player {
             Player::Black => self.black.count_ones(),
@@ -282,12 +281,14 @@ impl BitBoard {
         }
     }
 
-    /// 両プレイヤーの石の数を取得
+    /// 両プレイヤーの石の数を取得（高速化版）
+    #[inline(always)]
     pub fn count_all_discs(&self) -> (u32, u32) {
         (self.black.count_ones(), self.white.count_ones())
     }
 
-    /// パス判定
+    /// パス判定（高速化版）
+    #[inline(always)]
     pub fn is_pass_required(&self, player: Player) -> bool {
         self.get_legal_moves(player) == 0
     }

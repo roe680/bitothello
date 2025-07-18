@@ -1,4 +1,6 @@
 use crate::board::BitBoard;
+use fxhash::FxHashMap;
+use std::cell::RefCell;
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
 pub enum Player {
@@ -32,15 +34,57 @@ impl Player {
     }
 }
 
-#[derive(Debug, Clone)]
 pub enum PlayerType {
     Human,
-    AI { level: usize },
+    AI {
+        level: usize,
+        tt: RefCell<FxHashMap<(u64, u64, u8), Entry>>, //black, white, playerの順
+    },
 }
+
+impl Clone for PlayerType {
+    fn clone(&self) -> Self {
+        match self {
+            PlayerType::Human => PlayerType::Human,
+            PlayerType::AI { level, tt } => PlayerType::AI {
+                level: *level,
+                tt: RefCell::new(tt.borrow().clone()),
+            },
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct Entry {
+    pub score: i32,            //このボードの評価
+    pub depth: u8,             //この評価を出すために何手先まで読んだか（再利用可否に使う）
+    pub flag: NodeType,        // Exact / LowerBound / UpperBound
+    pub best_move: Option<u8>, //最善手（あれば）例：0〜63 で盤面の場所を表す
+}
+
+#[derive(Clone, Copy)]
+pub enum NodeType {
+    Exact,
+    LowerBound,
+    UpperBound,
+}
+
+/*Exact
+この局面のスコアは「完全に正確に読んだやつ」→ 再利用してOK
+LowerBound
+「これ以上良い評価がある可能性がある」（例：βカットで途中終了）
+UpperBound
+「これ以下の評価しかない」（例：αカットで途中終了）
+ */
 
 impl PlayerType {
     /// 指定されたプレイヤータイプでゲームを実行する
-    pub fn play_turn(&self, board: &mut BitBoard, player: Player) -> bool {
+    /// 戻り値: (成功したかどうか, 手の位置, AI評価値)
+    pub fn play_turn(
+        &self,
+        board: &mut BitBoard,
+        player: Player,
+    ) -> (bool, Option<(usize, usize)>, Option<i32>) {
         match self {
             PlayerType::Human => {
                 println!("行(0-7) 列(0-7) の形式で入力。例: 3 2");
@@ -107,7 +151,7 @@ impl PlayerType {
                                 if board.is_legal_move(pos, player) {
                                     println!("{}を({},{})に置きます", player.to_string(), row, col);
                                     board.make_move(pos, player);
-                                    return true;
+                                    return (true, Some((row, col)), None);
                                 } else {
                                     println!("そこには置けません。別の場所を選んでください。");
                                     println!(
@@ -127,35 +171,93 @@ impl PlayerType {
                     }
                 }
             }
-            PlayerType::AI { level } => {
-                // 思考処理（AIレベルによって動的に調整）
+            PlayerType::AI { level, tt } => {
                 let start_thinking = std::time::Instant::now();
 
-                // 終盤ではより深く読む（適応型深度調整）
+                // 適応的深度調整（最適化版）
                 let empty_count = 64 - (board.black | board.white).count_ones() as usize;
-                let adaptive_level = if empty_count <= 12 && *level >= 5 {
-                    // 終盤は読みを深くする（石数が少ない時）
-                    *level + 2
-                } else {
-                    *level
+                let total_moves = 64 - empty_count;
+
+                let adaptive_level = match empty_count {
+                    0..=8 => {
+                        // 超終盤：完全読み
+                        std::cmp::min(empty_count + 4, *level + 6)
+                    }
+                    9..=16 => {
+                        // 終盤：深く読む
+                        std::cmp::min(*level + 3, 20)
+                    }
+                    17..=40 => {
+                        // 中盤：標準的な深度
+                        *level
+                    }
+                    _ => {
+                        // 序盤：効率重視
+                        std::cmp::max(*level - 1, 1)
+                    }
                 };
 
-                // 最善手を探索
-                if let Some(pos) = board.find_best_move(player, adaptive_level) {
-                    // 思考時間表示のためにスリープ時間を調整（早すぎるとユーザーが混乱するのを防ぐ）
+                // メモリクリーンアップの頻度を調整
+                {
+                    let mut tt_borrowed = tt.borrow_mut();
+                    if tt_borrowed.len() > 5_000_000 && total_moves % 8 == 0 {
+                        // 8手ごとにクリーンアップ
+                        let retain_count = 2_000_000;
+                        let mut entries: Vec<_> =
+                            tt_borrowed.iter().map(|(k, v)| (*k, *v)).collect();
+                        entries.sort_by_key(|(_, entry)| std::cmp::Reverse(entry.depth));
+
+                        tt_borrowed.clear();
+                        for (key, entry) in entries.into_iter().take(retain_count) {
+                            tt_borrowed.insert(key, entry);
+                        }
+                    }
+                }
+
+                // 最善手探索
+                let (pos, evaluation) = {
+                    let mut tt_borrowed = tt.borrow_mut();
+                    board.find_best_move_with_tt(player, adaptive_level, &mut *tt_borrowed)
+                };
+
+                if let Some(pos) = pos {
+                    // 思考時間の調整（レベルに応じて）
                     let elapsed = start_thinking.elapsed();
-                    if elapsed < std::time::Duration::from_millis(300) && *level < 9 {
-                        std::thread::sleep(std::time::Duration::from_millis(300) - elapsed);
+                    let min_thinking_time = match *level {
+                        1..=3 => std::time::Duration::from_millis(200),
+                        4..=6 => std::time::Duration::from_millis(300),
+                        7..=10 => std::time::Duration::from_millis(500),
+                        _ => std::time::Duration::from_millis(1000),
+                    };
+
+                    if elapsed < min_thinking_time {
+                        std::thread::sleep(min_thinking_time - elapsed);
                     }
 
                     let row = pos / 8;
                     let col = pos % 8;
-                    println!("{}(AI)は({},{})に置きました", player.to_string(), row, col);
+
+                    // 詳細情報の表示（デバッグ用）
+                    if *level >= 8 {
+                        println!(
+                            "{}(AI Lv.{})は({},{})に置きました [深度:{}, 評価:{:?}, 思考時間:{:.2}s]",
+                            player.to_string(),
+                            adaptive_level,
+                            row,
+                            col,
+                            adaptive_level,
+                            evaluation,
+                            start_thinking.elapsed().as_secs_f64()
+                        );
+                    } else {
+                        println!("{}(AI)は({},{})に置きました", player.to_string(), row, col);
+                    }
+
                     board.make_move(pos, player);
-                    true
+                    (true, Some((row, col)), evaluation)
                 } else {
                     println!("{}(AI)はパスします", player.to_string());
-                    false
+                    (false, None, None)
                 }
             }
         }

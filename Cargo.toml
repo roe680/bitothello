@@ -6,3 +6,39 @@ edition = "2021"
 [dependencies]
 rand = "0.8.5"
 rayon = "1.7.0"
+plotters = "0.3"
+chrono = "0.4"
+eframe = "0.24"
+egui = "0.24"
+egui_extras = "0.24"
+egui_plot = "0.24"
+image = "0.24"
+fxhash = "0.2"
+
+[profile.release]
+opt-level = 3
+codegen-units = 1
+lto = true
+panic = "abort"
+overflow-checks = false
+debug-assertions = false
+
+[profile.dev]
+opt-level = 1
+overflow-checks = false
+
+# CPU最適化フラグ
+[profile.release.package."*"]
+opt-level = 3
+
+# ネイティブCPU命令セット最適化
+[target.'cfg(target_arch = "x86_64")']
+rustflags = [
+    "-C",
+    "target-cpu=native",
+    "-C",
+    "target-feature=+popcnt,+bmi1,+bmi2",
+]
+
+[target.'cfg(target_arch = "aarch64")']
+rustflags = ["-C", "target-cpu=native"]
