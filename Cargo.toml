@@ -2,6 +2,10 @@
 name = "bitothello"
 version = "0.1.0"
 edition = "2021"
+description = "A high-performance bitboard-based Othello game with AI"
+authors = ["Your Name <your.email@example.com>"]
+license = "MIT"
+repository = "https://github.com/yourusername/bitothello"
 
 [dependencies]
 rand = "0.8.5"
@@ -42,3 +46,15 @@ rustflags = [
 
 [target.'cfg(target_arch = "aarch64")']
 rustflags = ["-C", "target-cpu=native"]
+
+[package.metadata.bundle]
+name = "BitOthello"
+identifier = "com.yourname.bitothello"
+short_description = "High-performance Othello game with AI"
+long_description = "A bitboard-based Othello (Reversi) game featuring multiple AI difficulty levels, game statistics, and an intuitive GUI interface."
+version = "0.1.0"
+copyright = "Copyright (c) 2024 Your Name. All rights reserved."
+
+[[bin]]
+name = "bitothello"
+path = "src/main.rs"

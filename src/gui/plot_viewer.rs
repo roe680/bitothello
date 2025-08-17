@@ -15,6 +15,7 @@ pub enum PlotType {
 pub struct PlotViewer {
     selected_plot: PlotType,
     has_data: bool,
+    fixed_bounds: bool,
 }
 
 impl PlotViewer {
@@ -22,6 +23,7 @@ impl PlotViewer {
         Self {
             selected_plot: PlotType::DiscCount,
             has_data: false,
+            fixed_bounds: true,
         }
     }
 
@@ -45,6 +47,27 @@ impl PlotViewer {
             return;
         }
 
+        // Add fixed container to control expansion
+        ui.allocate_ui_with_layout(
+            egui::Vec2::new(800.0, 600.0),
+            egui::Layout::top_down(egui::Align::Min),
+            |ui| {
+                egui::ScrollArea::vertical()
+                    .max_height(580.0)
+                    .show(ui, |ui| {
+                        self.show_content(ui, language, stats, result);
+                    });
+            },
+        );
+    }
+
+    fn show_content(
+        &mut self,
+        ui: &mut egui::Ui,
+        language: Language,
+        stats: &GameStats,
+        result: &GameResult,
+    ) {
         // Plot type selector
         ui.horizontal(|ui| {
             let plot_type_label = match language {
@@ -98,6 +121,36 @@ impl PlotViewer {
                 .clicked()
             {
                 self.selected_plot = PlotType::Overview;
+            }
+        });
+
+        // Bounds control
+        ui.horizontal(|ui| {
+            let bounds_label = match language {
+                Language::Japanese => "固定範囲:",
+                Language::English => "Fixed Bounds:",
+            };
+            ui.label(bounds_label);
+
+            let checkbox_tooltip = match language {
+                Language::Japanese => "チェックするとグラフの範囲を固定し、継続的な拡張を防ぎます",
+                Language::English => "Check to fix graph bounds and prevent continuous expansion",
+            };
+            ui.checkbox(&mut self.fixed_bounds, "")
+                .on_hover_text(checkbox_tooltip);
+
+            ui.separator();
+
+            if ui
+                .small_button("🔄")
+                .on_hover_text(match language {
+                    Language::Japanese => "グラフ表示をリセット",
+                    Language::English => "Reset graph display",
+                })
+                .clicked()
+            {
+                // Force plot to recalculate bounds
+                ui.ctx().request_repaint();
             }
         });
 
@@ -156,31 +209,47 @@ impl PlotViewer {
             .map(|(move_num, _, white)| [*move_num as f64, *white as f64])
             .collect();
 
-        Plot::new("disc_count_plot")
+        let mut plot = Plot::new("main_disc_count_plot")
             .legend(egui_plot::Legend::default())
             .x_axis_label(x_label)
             .y_axis_label(y_label)
-            .show(ui, |plot_ui| {
-                let black_label = match language {
-                    Language::Japanese => "黒",
-                    Language::English => "Black",
-                };
-                plot_ui.line(
-                    Line::new(black_points)
-                        .color(egui::Color32::RED)
-                        .name(black_label),
-                );
+            .height(400.0)
+            .width(700.0)
+            .view_aspect(1.75);
 
-                let white_label = match language {
-                    Language::Japanese => "白",
-                    Language::English => "White",
-                };
-                plot_ui.line(
-                    Line::new(white_points)
-                        .color(egui::Color32::BLUE)
-                        .name(white_label),
-                );
-            });
+        if self.fixed_bounds {
+            // Set fixed bounds to prevent continuous expansion
+            let max_move = disc_history.iter().map(|(m, _, _)| *m).max().unwrap_or(0) as f64;
+            plot = plot
+                .include_x(0.0)
+                .include_x(max_move + 1.0)
+                .include_y(0.0)
+                .include_y(64.0);
+        } else {
+            plot = plot.auto_bounds_x().auto_bounds_y();
+        }
+
+        plot.show(ui, |plot_ui| {
+            let black_label = match language {
+                Language::Japanese => "黒",
+                Language::English => "Black",
+            };
+            plot_ui.line(
+                Line::new(black_points)
+                    .color(egui::Color32::RED)
+                    .name(black_label),
+            );
+
+            let white_label = match language {
+                Language::Japanese => "白",
+                Language::English => "White",
+            };
+            plot_ui.line(
+                Line::new(white_points)
+                    .color(egui::Color32::BLUE)
+                    .name(white_label),
+            );
+        });
 
         // Add game result summary
         ui.add_space(10.0);
@@ -230,40 +299,57 @@ impl PlotViewer {
         let avg_time =
             time_history.iter().map(|(_, time)| time).sum::<f64>() / time_history.len() as f64;
 
-        Plot::new("thinking_time_plot")
+        let mut plot = Plot::new("main_thinking_time_plot")
             .legend(egui_plot::Legend::default())
             .x_axis_label(x_label)
             .y_axis_label(y_label)
-            .show(ui, |plot_ui| {
-                let time_label = match language {
-                    Language::Japanese => "思考時間",
-                    Language::English => "Thinking Time",
+            .height(400.0)
+            .width(700.0)
+            .view_aspect(1.75);
+
+        if self.fixed_bounds {
+            // Set fixed bounds to prevent continuous expansion
+            let max_move = time_history.iter().map(|(m, _)| *m).max().unwrap_or(0) as f64;
+            let max_time = time_history.iter().map(|(_, t)| *t).fold(0.0, f64::max);
+            plot = plot
+                .include_x(0.0)
+                .include_x(max_move + 1.0)
+                .include_y(0.0)
+                .include_y(max_time * 1.1);
+        } else {
+            plot = plot.auto_bounds_x().auto_bounds_y();
+        }
+
+        plot.show(ui, |plot_ui| {
+            let time_label = match language {
+                Language::Japanese => "思考時間",
+                Language::English => "Thinking Time",
+            };
+            plot_ui.line(
+                Line::new(time_points)
+                    .color(egui::Color32::RED)
+                    .name(time_label),
+            );
+
+            // Add average line
+            if !time_history.is_empty() {
+                let first_move = time_history.first().unwrap().0 as f64;
+                let last_move = time_history.last().unwrap().0 as f64;
+                let avg_line: PlotPoints =
+                    vec![[first_move, avg_time], [last_move, avg_time]].into();
+
+                let avg_label = match language {
+                    Language::Japanese => format!("平均: {:.2}秒", avg_time),
+                    Language::English => format!("Average: {:.2}s", avg_time),
                 };
                 plot_ui.line(
-                    Line::new(time_points)
-                        .color(egui::Color32::RED)
-                        .name(time_label),
+                    Line::new(avg_line)
+                        .color(egui::Color32::GREEN)
+                        .stroke(egui::Stroke::new(2.0, egui::Color32::GREEN))
+                        .name(avg_label),
                 );
-
-                // Add average line
-                if !time_history.is_empty() {
-                    let first_move = time_history.first().unwrap().0 as f64;
-                    let last_move = time_history.last().unwrap().0 as f64;
-                    let avg_line: PlotPoints =
-                        vec![[first_move, avg_time], [last_move, avg_time]].into();
-
-                    let avg_label = match language {
-                        Language::Japanese => format!("平均: {:.2}秒", avg_time),
-                        Language::English => format!("Average: {:.2}s", avg_time),
-                    };
-                    plot_ui.line(
-                        Line::new(avg_line)
-                            .color(egui::Color32::GREEN)
-                            .stroke(egui::Stroke::new(2.0, egui::Color32::GREEN))
-                            .name(avg_label),
-                    );
-                }
-            });
+            }
+        });
 
         ui.add_space(10.0);
         self.show_thinking_time_stats(ui, language, result, stats);
@@ -315,47 +401,66 @@ impl PlotViewer {
             .map(|(move_num, _, eval)| [*move_num as f64, *eval as f64])
             .collect();
 
-        Plot::new("evaluation_plot")
+        let mut plot = Plot::new("main_evaluation_plot")
             .legend(egui_plot::Legend::default())
             .x_axis_label(x_label)
             .y_axis_label(y_label)
-            .show(ui, |plot_ui| {
-                if black_evals.points().len() > 0 {
-                    let black_label = match language {
-                        Language::Japanese => "黒AI評価値",
-                        Language::English => "Black AI Evaluation",
-                    };
-                    plot_ui.line(
-                        Line::new(black_evals)
-                            .color(egui::Color32::RED)
-                            .name(black_label),
-                    );
-                }
+            .height(400.0)
+            .width(700.0)
+            .view_aspect(1.75);
 
-                if white_evals.points().len() > 0 {
-                    let white_label = match language {
-                        Language::Japanese => "白AI評価値",
-                        Language::English => "White AI Evaluation",
-                    };
-                    plot_ui.line(
-                        Line::new(white_evals)
-                            .color(egui::Color32::BLUE)
-                            .name(white_label),
-                    );
-                }
+        if self.fixed_bounds {
+            // Set fixed bounds to prevent continuous expansion
+            let max_move = eval_history.iter().map(|(m, _, _)| *m).max().unwrap_or(0) as f64;
+            let min_eval = eval_history.iter().map(|(_, _, e)| *e).min().unwrap_or(0) as f64;
+            let max_eval = eval_history.iter().map(|(_, _, e)| *e).max().unwrap_or(0) as f64;
+            let eval_range = (max_eval - min_eval).max(100.0); // Minimum range of 100
+            plot = plot
+                .include_x(0.0)
+                .include_x(max_move + 1.0)
+                .include_y(min_eval - eval_range * 0.1)
+                .include_y(max_eval + eval_range * 0.1);
+        } else {
+            plot = plot.auto_bounds_x().auto_bounds_y();
+        }
 
-                // Add zero line
-                if let (Some(first), Some(last)) = (eval_history.first(), eval_history.last()) {
-                    let zero_line: PlotPoints =
-                        vec![[first.0 as f64, 0.0], [last.0 as f64, 0.0]].into();
-                    plot_ui.line(
-                        Line::new(zero_line)
-                            .color(egui::Color32::GRAY)
-                            .stroke(egui::Stroke::new(1.0, egui::Color32::GRAY))
-                            .name("Zero"),
-                    );
-                }
-            });
+        plot.show(ui, |plot_ui| {
+            if black_evals.points().len() > 0 {
+                let black_label = match language {
+                    Language::Japanese => "黒AI評価値",
+                    Language::English => "Black AI Evaluation",
+                };
+                plot_ui.line(
+                    Line::new(black_evals)
+                        .color(egui::Color32::RED)
+                        .name(black_label),
+                );
+            }
+
+            if white_evals.points().len() > 0 {
+                let white_label = match language {
+                    Language::Japanese => "白AI評価値",
+                    Language::English => "White AI Evaluation",
+                };
+                plot_ui.line(
+                    Line::new(white_evals)
+                        .color(egui::Color32::BLUE)
+                        .name(white_label),
+                );
+            }
+
+            // Add zero line
+            if let (Some(first), Some(last)) = (eval_history.first(), eval_history.last()) {
+                let zero_line: PlotPoints =
+                    vec![[first.0 as f64, 0.0], [last.0 as f64, 0.0]].into();
+                plot_ui.line(
+                    Line::new(zero_line)
+                        .color(egui::Color32::GRAY)
+                        .stroke(egui::Stroke::new(1.0, egui::Color32::GRAY))
+                        .name("Zero"),
+                );
+            }
+        });
 
         ui.add_space(10.0);
         self.show_evaluation_stats(ui, language, stats);
@@ -371,7 +476,8 @@ impl PlotViewer {
         ui.horizontal(|ui| {
             // Left column - Disc count
             ui.vertical(|ui| {
-                ui.set_min_width(300.0);
+                ui.set_width(350.0);
+                ui.set_height(200.0);
                 let title = match language {
                     Language::Japanese => "石数推移（簡略）",
                     Language::English => "Disc Count (Brief)",
@@ -384,7 +490,8 @@ impl PlotViewer {
 
             // Right column - Thinking time
             ui.vertical(|ui| {
-                ui.set_min_width(300.0);
+                ui.set_width(350.0);
+                ui.set_height(200.0);
                 let title = match language {
                     Language::Japanese => "思考時間（簡略）",
                     Language::English => "Thinking Time (Brief)",
@@ -418,12 +525,26 @@ impl PlotViewer {
             .map(|(move_num, _, white)| [*move_num as f64, *white as f64])
             .collect();
 
-        Plot::new("mini_disc_plot")
+        let mut plot = Plot::new("overview_mini_disc_plot")
             .height(150.0)
-            .show(ui, |plot_ui| {
-                plot_ui.line(Line::new(black_points).color(egui::Color32::RED));
-                plot_ui.line(Line::new(white_points).color(egui::Color32::BLUE));
-            });
+            .width(300.0)
+            .view_aspect(2.0);
+
+        if self.fixed_bounds {
+            let max_move = disc_history.iter().map(|(m, _, _)| *m).max().unwrap_or(0) as f64;
+            plot = plot
+                .include_x(0.0)
+                .include_x(max_move + 1.0)
+                .include_y(0.0)
+                .include_y(64.0);
+        } else {
+            plot = plot.auto_bounds_x().auto_bounds_y();
+        }
+
+        plot.show(ui, |plot_ui| {
+            plot_ui.line(Line::new(black_points).color(egui::Color32::RED));
+            plot_ui.line(Line::new(white_points).color(egui::Color32::BLUE));
+        });
     }
 
     fn show_mini_time_plot(&self, ui: &mut egui::Ui, _language: Language, stats: &GameStats) {
@@ -438,59 +559,71 @@ impl PlotViewer {
             .map(|(move_num, time)| [*move_num as f64, *time])
             .collect();
 
-        Plot::new("mini_time_plot")
+        let mut plot = Plot::new("overview_mini_time_plot")
             .height(150.0)
-            .show(ui, |plot_ui| {
-                plot_ui.line(Line::new(time_points).color(egui::Color32::RED));
-            });
+            .width(300.0)
+            .view_aspect(2.0);
+
+        if self.fixed_bounds {
+            let max_move = time_history.iter().map(|(m, _)| *m).max().unwrap_or(0) as f64;
+            let max_time = time_history.iter().map(|(_, t)| *t).fold(0.0, f64::max);
+            plot = plot
+                .include_x(0.0)
+                .include_x(max_move + 1.0)
+                .include_y(0.0)
+                .include_y(max_time * 1.1);
+        } else {
+            plot = plot.auto_bounds_x().auto_bounds_y();
+        }
+
+        plot.show(ui, |plot_ui| {
+            plot_ui.line(Line::new(time_points).color(egui::Color32::RED));
+        });
     }
 
     fn show_game_result_summary(&self, ui: &mut egui::Ui, language: Language, result: &GameResult) {
-        ui.group(|ui| {
-            let title = match language {
-                Language::Japanese => "ゲーム結果",
-                Language::English => "Game Result",
-            };
-            ui.label(egui::RichText::new(title).strong());
+        ui.horizontal(|ui| {
+            ui.group(|ui| {
+                ui.vertical(|ui| {
+                    let result_title = match language {
+                        Language::Japanese => "ゲーム結果",
+                        Language::English => "Game Result",
+                    };
+                    ui.strong(result_title);
 
-            match (result.winner, language) {
-                (Some(Player::Black), Language::Japanese) => {
-                    ui.label(format!(
-                        "勝者: 黒 ({} vs {})",
-                        result.black_final_count, result.white_final_count
-                    ));
-                }
-                (Some(Player::Black), Language::English) => {
-                    ui.label(format!(
-                        "Winner: Black ({} vs {})",
-                        result.black_final_count, result.white_final_count
-                    ));
-                }
-                (Some(Player::White), Language::Japanese) => {
-                    ui.label(format!(
-                        "勝者: 白 ({} vs {})",
-                        result.black_final_count, result.white_final_count
-                    ));
-                }
-                (Some(Player::White), Language::English) => {
-                    ui.label(format!(
-                        "Winner: White ({} vs {})",
-                        result.black_final_count, result.white_final_count
-                    ));
-                }
-                (None, Language::Japanese) => {
-                    ui.label(format!(
-                        "引き分け ({} vs {})",
-                        result.black_final_count, result.white_final_count
-                    ));
-                }
-                (None, Language::English) => {
-                    ui.label(format!(
-                        "Draw ({} vs {})",
-                        result.black_final_count, result.white_final_count
-                    ));
-                }
-            }
+                    let winner_text = match result.winner {
+                        Some(Player::Black) => match language {
+                            Language::Japanese => "勝者: 黒",
+                            Language::English => "Winner: Black",
+                        },
+                        Some(Player::White) => match language {
+                            Language::Japanese => "勝者: 白",
+                            Language::English => "Winner: White",
+                        },
+                        None => match language {
+                            Language::Japanese => "引き分け",
+                            Language::English => "Draw",
+                        },
+                    };
+                    ui.label(winner_text);
+
+                    let score_text = match language {
+                        Language::Japanese => {
+                            format!(
+                                "最終スコア: 黒{}個 - 白{}個",
+                                result.black_final_count, result.white_final_count
+                            )
+                        }
+                        Language::English => {
+                            format!(
+                                "Final Score: Black {} - White {}",
+                                result.black_final_count, result.white_final_count
+                            )
+                        }
+                    };
+                    ui.label(score_text);
+                });
+            });
         });
     }
 
@@ -499,80 +632,132 @@ impl PlotViewer {
         ui: &mut egui::Ui,
         language: Language,
         result: &GameResult,
-        _stats: &GameStats,
+        stats: &GameStats,
     ) {
-        ui.group(|ui| {
-            let title = match language {
-                Language::Japanese => "思考時間統計",
-                Language::English => "Thinking Time Statistics",
-            };
-            ui.label(egui::RichText::new(title).strong());
+        ui.horizontal(|ui| {
+            ui.group(|ui| {
+                ui.vertical(|ui| {
+                    let stats_title = match language {
+                        Language::Japanese => "思考時間統計",
+                        Language::English => "Thinking Time Statistics",
+                    };
+                    ui.strong(stats_title);
 
-            match language {
-                Language::Japanese => {
-                    ui.label(format!("総手数: {}", result.total_moves));
-                    ui.label(format!("総思考時間: {:.2?}", result.total_thinking_time));
+                    let total_moves_text = match language {
+                        Language::Japanese => format!("総手数: {}", result.total_moves),
+                        Language::English => format!("Total Moves: {}", result.total_moves),
+                    };
+                    ui.label(total_moves_text);
+
+                    let game_duration_text = match language {
+                        Language::Japanese => {
+                            format!("ゲーム時間: {:.1}秒", result.game_duration.as_secs_f64())
+                        }
+                        Language::English => {
+                            format!("Game Duration: {:.1}s", result.game_duration.as_secs_f64())
+                        }
+                    };
+                    ui.label(game_duration_text);
+
+                    let total_thinking_text = match language {
+                        Language::Japanese => format!(
+                            "総思考時間: {:.1}秒",
+                            result.total_thinking_time.as_secs_f64()
+                        ),
+                        Language::English => format!(
+                            "Total Thinking Time: {:.1}s",
+                            result.total_thinking_time.as_secs_f64()
+                        ),
+                    };
+                    ui.label(total_thinking_text);
+
                     if result.total_moves > 0 {
-                        ui.label(format!(
-                            "平均思考時間: {:.2?}",
-                            result.total_thinking_time / result.total_moves as u32
-                        ));
+                        let avg_thinking_time =
+                            result.total_thinking_time.as_secs_f64() / result.total_moves as f64;
+                        let avg_text = match language {
+                            Language::Japanese => {
+                                format!("平均思考時間: {:.2}秒", avg_thinking_time)
+                            }
+                            Language::English => {
+                                format!("Average Thinking Time: {:.2}s", avg_thinking_time)
+                            }
+                        };
+                        ui.label(avg_text);
                     }
-                }
-                Language::English => {
-                    ui.label(format!("Total moves: {}", result.total_moves));
-                    ui.label(format!(
-                        "Total thinking time: {:.2?}",
-                        result.total_thinking_time
-                    ));
-                    if result.total_moves > 0 {
-                        ui.label(format!(
-                            "Average thinking time: {:.2?}",
-                            result.total_thinking_time / result.total_moves as u32
-                        ));
+
+                    // Min/Max thinking times
+                    let time_history = stats.get_thinking_time_history();
+                    if !time_history.is_empty() {
+                        let times: Vec<f64> = time_history.iter().map(|(_, time)| *time).collect();
+                        let min_time = times.iter().fold(f64::INFINITY, |a, &b| a.min(b));
+                        let max_time = times.iter().fold(0.0f64, |a, &b| a.max(b));
+
+                        let min_text = match language {
+                            Language::Japanese => format!("最短思考: {:.2}秒", min_time),
+                            Language::English => format!("Min Thinking: {:.2}s", min_time),
+                        };
+                        ui.label(min_text);
+
+                        let max_text = match language {
+                            Language::Japanese => format!("最長思考: {:.2}秒", max_time),
+                            Language::English => format!("Max Thinking: {:.2}s", max_time),
+                        };
+                        ui.label(max_text);
                     }
-                }
-            }
+                });
+            });
         });
     }
 
     fn show_evaluation_stats(&self, ui: &mut egui::Ui, language: Language, stats: &GameStats) {
         let eval_history = stats.get_evaluation_history();
-
         if eval_history.is_empty() {
             return;
         }
 
-        ui.group(|ui| {
-            let title = match language {
-                Language::Japanese => "評価値統計",
-                Language::English => "Evaluation Statistics",
-            };
-            ui.label(egui::RichText::new(title).strong());
+        ui.horizontal(|ui| {
+            ui.group(|ui| {
+                ui.vertical(|ui| {
+                    let stats_title = match language {
+                        Language::Japanese => "AI評価値統計",
+                        Language::English => "AI Evaluation Statistics",
+                    };
+                    ui.strong(stats_title);
 
-            let max_eval = eval_history
-                .iter()
-                .map(|(_, _, eval)| *eval)
-                .max()
-                .unwrap_or(0);
-            let min_eval = eval_history
-                .iter()
-                .map(|(_, _, eval)| *eval)
-                .min()
-                .unwrap_or(0);
+                    // Separate by player
+                    let black_evals: Vec<i32> = eval_history
+                        .iter()
+                        .filter(|(_, player, _)| *player == Player::Black)
+                        .map(|(_, _, eval)| *eval)
+                        .collect();
 
-            match language {
-                Language::Japanese => {
-                    ui.label(format!("最高評価値: {}", max_eval));
-                    ui.label(format!("最低評価値: {}", min_eval));
-                    ui.label(format!("評価値記録数: {}", eval_history.len()));
-                }
-                Language::English => {
-                    ui.label(format!("Max evaluation: {}", max_eval));
-                    ui.label(format!("Min evaluation: {}", min_eval));
-                    ui.label(format!("Evaluation records: {}", eval_history.len()));
-                }
-            }
+                    let white_evals: Vec<i32> = eval_history
+                        .iter()
+                        .filter(|(_, player, _)| *player == Player::White)
+                        .map(|(_, _, eval)| *eval)
+                        .collect();
+
+                    if !black_evals.is_empty() {
+                        let black_avg =
+                            black_evals.iter().sum::<i32>() as f64 / black_evals.len() as f64;
+                        let black_text = match language {
+                            Language::Japanese => format!("黒AI平均評価: {:.1}", black_avg),
+                            Language::English => format!("Black AI Avg Eval: {:.1}", black_avg),
+                        };
+                        ui.label(black_text);
+                    }
+
+                    if !white_evals.is_empty() {
+                        let white_avg =
+                            white_evals.iter().sum::<i32>() as f64 / white_evals.len() as f64;
+                        let white_text = match language {
+                            Language::Japanese => format!("白AI平均評価: {:.1}", white_avg),
+                            Language::English => format!("White AI Avg Eval: {:.1}", white_avg),
+                        };
+                        ui.label(white_text);
+                    }
+                });
+            });
         });
     }
 
@@ -583,57 +768,94 @@ impl PlotViewer {
         result: &GameResult,
     ) {
         ui.group(|ui| {
-            let title = match language {
-                Language::Japanese => "詳細ゲーム情報",
-                Language::English => "Detailed Game Information",
-            };
-            ui.label(egui::RichText::new(title).heading());
+            ui.vertical(|ui| {
+                let summary_title = match language {
+                    Language::Japanese => "詳細ゲームサマリー",
+                    Language::English => "Detailed Game Summary",
+                };
+                ui.strong(summary_title);
 
-            ui.separator();
+                ui.separator();
 
-            match language {
-                Language::Japanese => {
-                    ui.label(format!("総手数: {}", result.total_moves));
-                    ui.label(format!(
-                        "ゲーム時間: {:.1}秒",
-                        result.game_duration.as_secs_f64()
-                    ));
-                    ui.label(format!("総思考時間: {:.2?}", result.total_thinking_time));
-                    ui.label(format!(
-                        "最終スコア: 黒 {} - 白 {}",
-                        result.black_final_count, result.white_final_count
-                    ));
+                // Winner
+                let winner_text = match result.winner {
+                    Some(Player::Black) => match language {
+                        Language::Japanese => "🏆 勝者: 黒プレイヤー",
+                        Language::English => "🏆 Winner: Black Player",
+                    },
+                    Some(Player::White) => match language {
+                        Language::Japanese => "🏆 勝者: 白プレイヤー",
+                        Language::English => "🏆 Winner: White Player",
+                    },
+                    None => match language {
+                        Language::Japanese => "🤝 引き分け",
+                        Language::English => "🤝 Draw",
+                    },
+                };
+                ui.label(winner_text);
 
-                    let winner_text = match result.winner {
-                        Some(Player::Black) => "黒の勝利",
-                        Some(Player::White) => "白の勝利",
-                        None => "引き分け",
-                    };
-                    ui.label(format!("結果: {}", winner_text));
-                }
-                Language::English => {
-                    ui.label(format!("Total moves: {}", result.total_moves));
-                    ui.label(format!(
-                        "Game duration: {:.1} seconds",
-                        result.game_duration.as_secs_f64()
-                    ));
-                    ui.label(format!(
-                        "Total thinking time: {:.2?}",
-                        result.total_thinking_time
-                    ));
-                    ui.label(format!(
-                        "Final score: Black {} - White {}",
-                        result.black_final_count, result.white_final_count
-                    ));
+                // Score
+                let score_text = match language {
+                    Language::Japanese => {
+                        format!(
+                            "📊 最終スコア: 黒 {} - {} 白",
+                            result.black_final_count, result.white_final_count
+                        )
+                    }
+                    Language::English => {
+                        format!(
+                            "📊 Final Score: Black {} - {} White",
+                            result.black_final_count, result.white_final_count
+                        )
+                    }
+                };
+                ui.label(score_text);
 
-                    let winner_text = match result.winner {
-                        Some(Player::Black) => "Black wins",
-                        Some(Player::White) => "White wins",
-                        None => "Draw",
-                    };
-                    ui.label(format!("Result: {}", winner_text));
-                }
-            }
+                // Score difference
+                let diff =
+                    (result.black_final_count as i32 - result.white_final_count as i32).abs();
+                let diff_text = match language {
+                    Language::Japanese => format!("📈 点差: {}点", diff),
+                    Language::English => format!("📈 Score Difference: {} points", diff),
+                };
+                ui.label(diff_text);
+
+                // Game stats
+                let moves_text = match language {
+                    Language::Japanese => format!("🎯 総手数: {}", result.total_moves),
+                    Language::English => format!("🎯 Total Moves: {}", result.total_moves),
+                };
+                ui.label(moves_text);
+
+                let duration_text = match language {
+                    Language::Japanese => {
+                        format!("⏱️ ゲーム時間: {:.1}秒", result.game_duration.as_secs_f64())
+                    }
+                    Language::English => {
+                        format!(
+                            "⏱️ Game Duration: {:.1}s",
+                            result.game_duration.as_secs_f64()
+                        )
+                    }
+                };
+                ui.label(duration_text);
+
+                let thinking_text = match language {
+                    Language::Japanese => {
+                        format!(
+                            "🤔 総思考時間: {:.1}秒",
+                            result.total_thinking_time.as_secs_f64()
+                        )
+                    }
+                    Language::English => {
+                        format!(
+                            "🤔 Total Thinking Time: {:.1}s",
+                            result.total_thinking_time.as_secs_f64()
+                        )
+                    }
+                };
+                ui.label(thinking_text);
+            });
         });
     }
 }

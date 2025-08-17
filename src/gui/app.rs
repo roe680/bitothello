@@ -98,7 +98,8 @@ pub struct OthelloApp {
     // ゲーム設定
     black_player_type: PlayerTypeSelection,
     white_player_type: PlayerTypeSelection,
-    custom_depth: usize,
+    black_custom_depth: usize,
+    white_custom_depth: usize,
 
     // ゲーム状態
     board: BitBoard,
@@ -139,7 +140,8 @@ impl Default for OthelloApp {
             language: Language::Japanese,
             black_player_type: PlayerTypeSelection::Human,
             white_player_type: PlayerTypeSelection::AI3,
-            custom_depth: 5,
+            black_custom_depth: 5,
+            white_custom_depth: 5,
             board: BitBoard::new(),
             current_player: Player::Black,
             black_player: None,
@@ -201,8 +203,10 @@ impl OthelloApp {
             (Language::English, "black_player") => "Black (First): ".to_string(),
             (Language::Japanese, "white_player") => "白(後手): ".to_string(),
             (Language::English, "white_player") => "White (Second): ".to_string(),
-            (Language::Japanese, "custom_depth") => "カスタム深さ: ".to_string(),
-            (Language::English, "custom_depth") => "Custom Depth: ".to_string(),
+            (Language::Japanese, "black_custom_depth") => "黒カスタム深さ: ".to_string(),
+            (Language::Japanese, "white_custom_depth") => "白カスタム深さ: ".to_string(),
+            (Language::English, "black_custom_depth") => "Black Custom Depth: ".to_string(),
+            (Language::English, "white_custom_depth") => "White Custom Depth: ".to_string(),
             (Language::Japanese, "start_game") => "ゲーム開始".to_string(),
             (Language::English, "start_game") => "Start Game".to_string(),
             (Language::Japanese, "language") => "言語 / Language".to_string(),
@@ -250,8 +254,14 @@ impl OthelloApp {
         self.ai_move_receiver = None;
 
         // プレイヤータイプを設定
-        self.black_player = Some(self.black_player_type.to_player_type(self.custom_depth));
-        self.white_player = Some(self.white_player_type.to_player_type(self.custom_depth));
+        self.black_player = Some(
+            self.black_player_type
+                .to_player_type(self.black_custom_depth),
+        );
+        self.white_player = Some(
+            self.white_player_type
+                .to_player_type(self.white_custom_depth),
+        );
 
         self.state = GameState::Playing;
         self.status_message = match self.language {
@@ -516,6 +526,10 @@ impl eframe::App for OthelloApp {
             egui::Window::new(Self::t(self.language, "graph_viewer"))
                 .open(&mut self.show_plot_window)
                 .default_size([900.0, 700.0])
+                .min_size([600.0, 400.0])
+                .max_size([1400.0, 1000.0])
+                .resizable(true)
+                .collapsible(false)
                 .show(ctx, |ui| {
                     if let (Some(ref stats), Some(ref result)) =
                         (&self.stored_game_stats, &self.stored_game_result)
@@ -531,8 +545,13 @@ impl eframe::App for OthelloApp {
                 });
         }
 
-        // 継続的な更新
-        ctx.request_repaint();
+        // 必要な時のみ更新を要求
+        if self.ai_thinking {
+            ctx.request_repaint();
+        } else if self.state == GameState::Playing {
+            // プレイ中でもAIが思考していない場合は、人間の入力待ちなので再描画は不要
+            // ただし、ユーザーの操作があった場合は自動的に再描画される
+        }
     }
 }
 
@@ -676,10 +695,18 @@ impl OthelloApp {
                     if self.black_player_type == PlayerTypeSelection::Custom
                         || self.white_player_type == PlayerTypeSelection::Custom
                     {
-                        ui.horizontal(|ui| {
-                            ui.label(Self::t(self.language, "custom_depth"));
-                            ui.add(egui::Slider::new(&mut self.custom_depth, 1..=15));
-                        });
+                        if self.black_player_type == PlayerTypeSelection::Custom {
+                            ui.horizontal(|ui| {
+                                ui.label(Self::t(self.language, "black_custom_depth"));
+                                ui.add(egui::Slider::new(&mut self.black_custom_depth, 1..=15));
+                            });
+                        }
+                        if self.white_player_type == PlayerTypeSelection::Custom {
+                            ui.horizontal(|ui| {
+                                ui.label(Self::t(self.language, "white_custom_depth"));
+                                ui.add(egui::Slider::new(&mut self.white_custom_depth, 1..=15));
+                            });
+                        }
                     }
                 });
             });

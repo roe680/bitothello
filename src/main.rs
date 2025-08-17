@@ -13,6 +13,8 @@ use std::collections::HashMap;
 use std::io::{self, Write};
 use std::time::{Duration, Instant};
 
+use crate::gui::japanese::setup_custom_fonts;
+
 fn main() {
     // コマンドライン引数をチェック
     let args: Vec<String> = std::env::args().collect();
@@ -24,10 +26,16 @@ fn main() {
         run_quick_ai_game();
         return;
     }
-    if args.len() > 1 && args[1] == "gui" {
-        run_gui();
+    if args.len() > 1 && args[1] == "cli" {
+        run_cli_game();
         return;
     }
+
+    // デフォルトでGUIを起動
+    run_gui();
+}
+
+fn run_cli_game() {
     // タイトル表示
     println!("==========================");
     println!("    ビット オセロ");
@@ -432,7 +440,10 @@ fn run_gui() {
     if let Err(e) = eframe::run_native(
         "ビット オセロ",
         options,
-        Box::new(|cc| Box::new(gui::OthelloApp::new(cc))),
+        Box::new(|cc| {
+            setup_custom_fonts(&cc.egui_ctx);
+            Box::new(gui::OthelloApp::new(cc))
+        }),
     ) {
         eprintln!("GUI実行エラー: {}", e);
     }
