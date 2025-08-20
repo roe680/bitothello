@@ -1,0 +1,135 @@
+<svg
+    width="512"
+    height="512"
+    viewBox="0 0 512 512"
+    xmlns="http://www.w3.org/2000/svg"
+>
+  <!-- Board background -->
+  <rect
+        x="32"
+        y="32"
+        width="448"
+        height="448"
+        fill="#228B22"
+        stroke="#006400"
+        stroke-width="4"
+        rx="8"
+    />
+
+  <!-- Grid lines -->
+  <defs>
+    <pattern id="grid" width="56" height="56" patternUnits="userSpaceOnUse">
+      <path
+                d="M 56 0 L 0 0 0 56"
+                fill="none"
+                stroke="#006400"
+                stroke-width="2"
+            />
+    </pattern>
+  </defs>
+
+  <!-- Apply grid pattern -->
+  <rect x="32" y="32" width="448" height="448" fill="url(#grid)" />
+
+  <!-- Game pieces in starting position -->
+  <!-- White pieces -->
+  <circle
+        cx="200"
+        cy="200"
+        r="20"
+        fill="#F5F5F5"
+        stroke="#DCDCDC"
+        stroke-width="2"
+    />
+  <circle
+        cx="312"
+        cy="312"
+        r="20"
+        fill="#F5F5F5"
+        stroke="#DCDCDC"
+        stroke-width="2"
+    />
+
+  <!-- Black pieces -->
+  <circle
+        cx="312"
+        cy="200"
+        r="20"
+        fill="#141414"
+        stroke="#000000"
+        stroke-width="1"
+    />
+  <circle
+        cx="200"
+        cy="312"
+        r="20"
+        fill="#141414"
+        stroke="#000000"
+        stroke-width="1"
+    />
+
+  <!-- Additional pieces for visual appeal -->
+  <circle
+        cx="144"
+        cy="200"
+        r="20"
+        fill="#141414"
+        stroke="#000000"
+        stroke-width="1"
+    />
+  <circle
+        cx="144"
+        cy="256"
+        r="20"
+        fill="#141414"
+        stroke="#000000"
+        stroke-width="1"
+    />
+  <circle
+        cx="144"
+        cy="312"
+        r="20"
+        fill="#141414"
+        stroke="#000000"
+        stroke-width="1"
+    />
+
+  <circle
+        cx="368"
+        cy="144"
+        r="20"
+        fill="#F5F5F5"
+        stroke="#DCDCDC"
+        stroke-width="2"
+    />
+  <circle
+        cx="368"
+        cy="200"
+        r="20"
+        fill="#F5F5F5"
+        stroke="#DCDCDC"
+        stroke-width="2"
+    />
+  <circle
+        cx="368"
+        cy="256"
+        r="20"
+        fill="#F5F5F5"
+        stroke="#DCDCDC"
+        stroke-width="2"
+    />
+
+  <!-- Highlights on pieces for 3D effect -->
+  <circle cx="194" cy="194" r="6" fill="#FFFFFF" opacity="0.6" />
+  <circle cx="306" cy="306" r="6" fill="#FFFFFF" opacity="0.6" />
+  <circle cx="306" cy="194" r="6" fill="#808080" opacity="0.4" />
+  <circle cx="194" cy="306" r="6" fill="#808080" opacity="0.4" />
+
+  <circle cx="138" cy="194" r="6" fill="#808080" opacity="0.4" />
+  <circle cx="138" cy="250" r="6" fill="#808080" opacity="0.4" />
+  <circle cx="138" cy="306" r="6" fill="#808080" opacity="0.4" />
+
+  <circle cx="362" cy="138" r="6" fill="#FFFFFF" opacity="0.6" />
+  <circle cx="362" cy="194" r="6" fill="#FFFFFF" opacity="0.6" />
+  <circle cx="362" cy="250" r="6" fill="#FFFFFF" opacity="0.6" />
+</svg>
